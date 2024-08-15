@@ -4,36 +4,38 @@ $scriptDir = Split-Path -Path $MyInvocation.MyCommand.Definition -Parent
 # Define the path to PingCastle executable
 $pingCastlePath = Join-Path -Path $scriptDir -ChildPath "PingCastle.exe"
 
-# Define the domain controller (you can use "localhost" for local scan)
-$domainController = "localhost"
+# Run systeminfo and filter for the "Domain" line
+$systemInfoOutput = & systeminfo | findstr /C:"Domain"
 
-# Get the domain name for the output file name
-try {
-    $domainName = (Get-ADDomain).DNSRoot
-} catch {
-    Write-Host "Failed to retrieve domain information. Ensure this script is run on a domain-joined machine with necessary permissions." -ForegroundColor Red
-    exit 1
-}
+# Extract the domain name from the output
+if ($systemInfoOutput) {
+    # Split the output line and get the domain name part
+    $domainName = $systemInfoOutput -replace "Domain:\s*", ""
 
-# Sanitize domain name to be a valid file name
-$domainName = $domainName -replace '[\/:*?"<>|]', '_'
+    # Trim any extra whitespace
+    $domainName = $domainName.Trim()
 
-# Define the output file path
-$outputFile = Join-Path -Path $scriptDir -ChildPath "$domainName.html"
+    # Check if domain name is empty
+    if ($domainName) {
+        Write-Host "Domain Name: $domainName" -ForegroundColor Green
 
-# Check if PingCastle executable exists
-if (-Not (Test-Path $pingCastlePath)) {
-    Write-Host "PingCastle executable not found in the script directory." -ForegroundColor Red
-    exit 1
-}
+        # Check if PingCastle executable exists
+        if (-Not (Test-Path $pingCastlePath)) {
+            Write-Host "PingCastle executable not found in the script directory." -ForegroundColor Red
+            exit 1
+        }
 
-# Run PingCastle with a health check command
-Write-Host "Running PingCastle health check against domain controller $domainController..."
-& $pingCastlePath --healthcheck --server $domainController --output $outputFile
-
-# Check the exit code and report status
-if ($LASTEXITCODE -eq 0) {
-    Write-Host "PingCastle health check completed successfully. Report saved to $outputFile" -ForegroundColor Green
+        # Run PingCastle with a health check command
+        Write-Host "Running PingCastle health check on domain $domainName..."
+        try {
+            & $pingCastlePath --healthcheck --server $domainName
+        } catch {
+            Write-Host "Failed to run PingCastle command. Check for details." -ForegroundColor Red
+            exit 1
+        }
+    } else {
+        Write-Host "Domain information is not available." -ForegroundColor Red
+    }
 } else {
-    Write-Host "PingCastle health check failed with exit code $LASTEXITCODE" -ForegroundColor Red
+    Write-Host "Failed to retrieve domain information using systeminfo." -ForegroundColor Red
 }
